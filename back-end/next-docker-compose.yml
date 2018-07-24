@@ -1,0 +1,17 @@
+version: "3"
+
+services:
+  database-service:
+    # Note, volume needs to be recreated and container
+    # needs to be removed if these are changed
+    environment:
+      - POSTGRES_USER=${DB_USERNAME}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    image: "postgres:10"
+    ports:
+      - "5432:5432"
+    restart: "always"
+    volumes:
+      - "database-data:/var/lib/postgresql/data"
+volumes:
+  database-data:
