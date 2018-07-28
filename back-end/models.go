@@ -3,23 +3,37 @@ package main
 import (
 	"time"
 
-	"github.com/jinzhu/gorm"
-
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 )
 
+type ResponseAccount struct {
+	AccountID    uint   `json:"accountID"`
+	Email        string `json:"email"`
+	FirstName    string `json:"firstName"`
+	GameAccounts []GameAccount
+	LastName     string `json:"lastName"`
+	UserName     string `json:"userName"`
+}
+
+type ResponsePendingAccount struct {
+	Email     string `json:"email"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	UserName  string `json:"userName"`
+}
+
 type Account struct {
-	gorm.Model
 	AccountID         uint          `gorm:"primary_key"`
 	Email             string        `gorm:"unique;not null"`
+	FirstName         string        `gorm:"not null"`
 	GameAccounts      []GameAccount `gorm:"foreignkey:AccountID;association_foreignkey:AccountID"`
 	GlobalPermissions uint          `gorm:"default:0"`
+	LastName          string        `gorm:"not null"`
 	UserName          string        `gorm:"unique;not null"`
 	Password          string
 }
 
 type Game struct {
-	gorm.Model
 	Colors       string        //This may change
 	GameAccounts []GameAccount `gorm:"foreignkey:GameID;association_foreignkey:GameID"`
 	GameID       uint          `gorm:"primary_key"`
@@ -28,7 +42,6 @@ type Game struct {
 }
 
 type GameAccount struct {
-	gorm.Model
 	Account         Account      `gorm:"foreignkey:AccountID;association_foreignkey:AccountID"`
 	AccountID       uint         `gorm:"unique_index:idx_game"`
 	AccountTeams    []TeamMember `gorm:"foreignkey:AccountID;association_foreignkey:AccountID"`
@@ -39,7 +52,6 @@ type GameAccount struct {
 }
 
 type Match struct {
-	gorm.Model
 	Game          Game `gorm:"foreignkey:GameID;association_foreignkey:GameID"`
 	LosingTeam    Team `gorm:"foreignkey:TeamID;association_foreignkey:LosingTeamID"`
 	MatchID       uint `gorm:"primary_key"`
@@ -50,27 +62,25 @@ type Match struct {
 	WinningTeamID uint
 }
 
-// Need logic to check that Email and Username don't exist in normal 'accounts' table
 type PendingAccount struct {
-	gorm.Model
-	Email    string `gorm:"unique;not null"`
-	UserName string `gorm:"unique;not null"`
-	UUID     string `gorm:"unique;not null"`
-	Password string
+	Email     string `gorm:"unique;not null"`
+	FirstName string `gorm:"not null"`
+	LastName  string `gorm:"not null"`
+	UserName  string `gorm:"unique;not null"`
+	UUID      string `gorm:"primary_key"`
+	Password  string
 }
 
 type Team struct {
-	gorm.Model
 	TeamID      uint         `gorm:"primary_key"`
 	TeamMembers []TeamMember `gorm:"foreignkey:TeamID;association_foreignkey:TeamID"`
 }
 
 // Note TeamMembers to indcate that there is more than one person on the team
 type TeamMember struct {
-	gorm.Model
 	AccountID   uint
 	GameID      uint
 	Team        Team `gorm:"foreignkey:TeamID;association_foreignkey:TeamID"`
-	TeamID      uint `gorm:"unique"`
+	TeamID      uint
 	TeamMembers bool
 }
