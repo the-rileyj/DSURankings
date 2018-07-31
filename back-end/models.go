@@ -31,6 +31,13 @@ type Session struct {
 	CreatedAt time.Time
 }
 
+type RequestMatch struct {
+	Losers    []uint64 `json:"losers"`
+	Winners   []uint64 `json:"winners"`
+	GameID    uint64
+	MatchTime time.Time
+}
+
 type ResponseAdvancedAccount struct {
 	GameAccounts []GameAccount
 	ResponseBasicAccount
@@ -52,13 +59,13 @@ type ResponseGame struct {
 
 type ResponseAdvancedGameAccount struct {
 	ResponseBasicGameAccount `json:"gameAccount"`
-	Account                  ResponseBasicAccount `json:"account"`
+	ResponseGame             `json:"game"`
 }
 
 type ResponseBasicGameAccount struct {
-	AccountID uint64 `json:"accountID"`
-	GameID    uint64 `json:"gameID"`
-	Score     uint64 `json:"score"`
+	Account ResponseBasicAccount `json:"account"`
+	GameID  uint64               `json:"gameID"`
+	Score   uint64               `json:"score"`
 }
 
 type ResponseAdvancedMatch struct {
@@ -139,9 +146,9 @@ type Game struct {
 	GameAccounts []GameAccount `gorm:"foreignkey:GameID;association_foreignkey:GameID"`
 	Matches      []Match       `gorm:"foreignkey:GameID;association_foreignkey:GameID"`
 	GameID       uint64        `gorm:"primary_key"`
-	GameName     string        `gorm:"unique"`
+	GameName     string        `gorm:"unique" json:"gameName"`
 	AccountID    uint64        // The person who originally created the game
-	Colors       string        // This may change
+	Colors       string        ` json:"colors"` // This may change
 }
 
 type GameAccount struct {
@@ -151,8 +158,8 @@ type GameAccount struct {
 	AccountID       uint64       `gorm:"unique_index:idx_game"`
 	GameID          uint64       `gorm:"unique_index:idx_game"`
 	GamePermissions uint64       `gorm:"default:0"`
-	Score           uint64
-	Enabled         bool
+	Score           uint64       `gorm:"default:300"`
+	Enabled         bool         `gorm:"default:true"`
 }
 
 type Match struct {
@@ -160,9 +167,9 @@ type Match struct {
 	Game          Game    `gorm:"foreignkey:GameID;association_foreignkey:GameID"`
 	LosingTeam    *Team   `gorm:"foreignkey:TeamID;association_foreignkey:LosingTeamID"`
 	WinningTeam   *Team   `gorm:"foreignkey:TeamID;association_foreignkey:WinningTeamID"`
+	Confirmed     bool    `gorm:"default:false"`
 	MatchID       uint64  `gorm:"primary_key"`
 	AccountID     uint64
-	Confirmed     bool
 	GameID        uint64
 	LosingTeamID  uint64
 	MatchTime     time.Time
@@ -194,6 +201,7 @@ type PendingAccount struct {
 
 type Team struct {
 	Match       Match        `gorm:"foreignkey:MatchID;association_foreignkey:MatchID"`
+	Single      bool         `gorm:"default:false"`
 	TeamMembers []TeamMember `gorm:"foreignkey:TeamID;association_foreignkey:TeamID"`
 	TeamID      uint64       `gorm:"primary_key"`
 	MatchID     uint64
@@ -205,10 +213,12 @@ type TeamMember struct {
 	GameAccount GameAccount `gorm:"foreignkey:AccountID;association_foreignkey:AccountID"`
 	Match       Match       `gorm:"foreignkey:MatchID;association_foreignkey:MatchID"`
 	Team        Team        `gorm:"foreignkey:TeamID;association_foreignkey:TeamID"`
+	Confirmed   bool        `gorm:"default:false"`
+	Deny        bool        `gorm:"default:false"`
+	TeamMembers bool        `gorm:"default:true"`
 	AccountID   uint64
-	Confirmed   bool
 	GameID      uint64
 	MatchID     uint64
 	TeamID      uint64
-	TeamMembers bool
+	Winner      bool
 }

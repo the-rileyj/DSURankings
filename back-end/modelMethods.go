@@ -48,13 +48,13 @@ func (g *Game) Response() ResponseGame {
 func (ga *GameAccount) AdvancedResponse() ResponseAdvancedGameAccount {
 	return ResponseAdvancedGameAccount{
 		ga.BasicResponse(),
-		ga.Account.BasicResponse(),
+		ga.Game.Response(),
 	}
 }
 
 func (ga *GameAccount) BasicResponse() ResponseBasicGameAccount {
 	return ResponseBasicGameAccount{
-		ga.AccountID,
+		ga.Account.BasicResponse(),
 		ga.GameID,
 		ga.Score,
 	}

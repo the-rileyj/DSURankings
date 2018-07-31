@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -23,22 +24,24 @@ func getRankingsForGame(context *gin.Context) {
 		return
 	}
 
-	var gameAccounts []GameAccount
+	gameAccounts := make([]GameAccount, 0)
 
-	if rdb := db.Preload("Accounts").Where(GameAccount{GameID: gid, Enabled: true}).Order("score desc").Find(&gameAccounts); rdb.Error != nil && !rdb.RecordNotFound() {
-		// if rdb.RecordNotFound() {
-		// 	errorResponse(
-		// 		context,
-		// 		"None for this game.", // Redo when return behavior is define, this should eventually return an empty list
-		// 		rdb.Error.Error(),
-		// 	)
-		// } else {
-		errorResponse(
-			context,
-			"An error occured getting the information, try again.",
-			rdb.Error.Error(),
-		)
-
+	if rdb := db.Preload("Account").Preload("Game").Where(GameAccount{GameID: gid, Enabled: true}).Order("score desc").Find(&gameAccounts); rdb.Error != nil && !rdb.RecordNotFound() {
+		if rdb.RecordNotFound() {
+			context.JSON(
+				200,
+				gin.H{
+					"data":  gameAccounts,
+					"error": false,
+				},
+			)
+		} else {
+			errorResponse(
+				context,
+				"An error occured getting the information, try again.",
+				rdb.Error.Error(),
+			)
+		}
 		return
 	}
 
@@ -57,6 +60,7 @@ func getRankingsForGame(context *gin.Context) {
 }
 
 func postLogin(context *gin.Context) {
+	defer context.Request.Body.Close()
 	var auth Auther
 
 	decoder := json.NewDecoder(context.Request.Body)
@@ -99,6 +103,21 @@ func postLogin(context *gin.Context) {
 	}
 
 	token := getUUID()
+
+	newSession := Session{
+		AccountID: user.AccountID,
+		UUID:      token,
+		CreatedAt: time.Now(),
+	}
+
+	if err := db.Create(&newSession).Error; err != nil {
+		errorResponse(
+			context,
+			"An error occured creating the account, try again.",
+			err.Error(),
+		)
+		return
+	}
 
 	context.JSON(
 		200,
@@ -386,7 +405,7 @@ func getUserAccount(context *gin.Context) {
 
 	var user Account
 
-	if rdb := db.Preload("GameAccounts").First(&user, aid); rdb.Error != nil {
+	if rdb := db.Preload("GameAccounts").Where(Account{AccountID: aid, Enabled: true}).First(&user); rdb.Error != nil {
 		if rdb.RecordNotFound() {
 			errorResponse(
 				context,
@@ -413,7 +432,54 @@ func getUserAccount(context *gin.Context) {
 }
 
 func getUserAccountForGame(context *gin.Context) {
-	// Like regi profile but with information pertaining specifically to game
+	aid, err := strconv.ParseUint(context.Param("aid"), 10, 32)
+
+	if err != nil {
+		errorResponse(
+			context,
+			"Error parsing ID.",
+			err.Error(),
+		)
+		return
+	}
+
+	gid, err := strconv.ParseUint(context.Param("gid"), 10, 32)
+
+	if err != nil {
+		errorResponse(
+			context,
+			"Error parsing ID.",
+			err.Error(),
+		)
+		return
+	}
+
+	var userGameAccount GameAccount
+
+	if rdb := db.Preload("Account").Preload("Game").Where(GameAccount{AccountID: aid, GameID: gid, Enabled: true}).First(&userGameAccount); rdb.Error != nil {
+		if rdb.RecordNotFound() {
+			errorResponse(
+				context,
+				"No results were found for the provided user and game.",
+				rdb.Error.Error(),
+			)
+		} else {
+			errorResponse(
+				context,
+				"An error occured getting the information, try again.",
+				rdb.Error.Error(),
+			)
+		}
+		return
+	}
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  userGameAccount.AdvancedResponse(),
+			"error": false,
+		},
+	)
 }
 
 func getConfirmAccount(context *gin.Context) {
@@ -460,6 +526,8 @@ func getConfirmAccount(context *gin.Context) {
 }
 
 func postCreateAccount(context *gin.Context) {
+	defer context.Request.Body.Close()
+
 	pendingUser := PendingAccount{}
 
 	decoder := json.NewDecoder(context.Request.Body)
@@ -572,7 +640,7 @@ func getRankingsForUserAccount(context *gin.Context) {
 
 	var user Account
 
-	if rdb := db.Preload("GameAccounts").Preload("GameAccounts.Game").First(&user, aid); rdb.Error != nil {
+	if rdb := db.Preload("GameAccounts").Preload("GameAccounts.Game").Where(Account{AccountID: aid, Enabled: true}).First(&user); rdb.Error != nil {
 		if rdb.RecordNotFound() {
 			errorResponse(
 				context,
@@ -668,7 +736,7 @@ func getRankingsForUserAccountInGame(context *gin.Context) {
 
 	gameAccounts := make([]GameAccount, 0)
 
-	if rdb := db.Where(GameAccount{GameID: gid}).Order("score desc").Find(&gameAccounts); rdb.Error != nil {
+	if rdb := db.Preload("Game").Where(GameAccount{GameID: gid, Enabled: true}).Order("score desc").Find(&gameAccounts); rdb.Error != nil {
 		if rdb.RecordNotFound() {
 			errorResponse(
 				context,
@@ -687,7 +755,6 @@ func getRankingsForUserAccountInGame(context *gin.Context) {
 
 	for index, gameAccount := range gameAccounts {
 		if gameAccount.AccountID == aid {
-
 			context.JSON(
 				200,
 				gin.H{
@@ -711,47 +778,53 @@ func getRankingsForUserAccountInGame(context *gin.Context) {
 }
 
 func deleteUser(context *gin.Context, apiAccount APIAccount) {
-	aid, err := strconv.ParseUint(context.Param("aid"), 10, 32)
+	// var userAccount Account
 
-	if err != nil {
-		errorResponse(
-			context,
-			"Error parsing ID.",
-			err.Error(),
-		)
-		return
-	}
+	// if rdb := db.First(&userAccount, apiAccount.AccountID); rdb.Error != nil {
+	// 	if rdb.RecordNotFound() {
+	// 		errorResponse(
+	// 			context,
+	// 			"Could not find an account with that ID to delete.",
+	// 			"Account doesn't exist.",
+	// 		)
+	// 	} else {
+	// 		errorResponse(
+	// 			context,
+	// 			"An error occured getting the information, try again.",
+	// 			rdb.Error.Error(),
+	// 		)
+	// 	}
+	// 	return
+	// }
 
-	// Assure that the user deleting the specified account is the same user who is authenticated
-	if aid != apiAccount.AccountID {
-		errorResponse(
-			context,
-			"You do not have the permisions for performing that action.",
-			err.Error(),
-		)
-		return
-	}
+	// userAccount.Enabled = false
 
-	var userAccount Account
+	// var userGameAccounts []GameAccount
 
-	if rdb := db.First(&userAccount, apiAccount.AccountID); rdb.Error != nil {
-		if rdb.RecordNotFound() {
-			errorResponse(
-				context,
-				"Could not find an account with that ID to delete.",
-				"Account doesn't exist.",
-			)
-		} else {
-			errorResponse(
-				context,
-				"An error occured getting the information, try again.",
-				rdb.Error.Error(),
-			)
-		}
-		return
-	}
+	// if rdb := db.Where(GameAccount{AccountID: apiAccount.AccountID}).Find(&userGameAccounts); !rdb.RecordNotFound() && rdb.Error != nil {
+	// 	errorResponse(
+	// 		context,
+	// 		"An error occured getting the game accounts information for deletion, try again.",
+	// 		rdb.Error.Error(),
+	// 	)
+	// 	return
+	// }
 
-	db.Delete(userAccount)
+	db.Model(&Account{}).Where(Account{AccountID: apiAccount.AccountID}).Update("enabled", false)
+
+	db.Where(Session{AccountID: apiAccount.AccountID}).Delete(Session{})
+
+	db.Model(&GameAccount{}).Where(GameAccount{AccountID: apiAccount.AccountID}).Update("enabled", false)
+
+	// db.Save(userAccount)
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  true,
+			"error": false,
+		},
+	)
 }
 
 func deleteGame(context *gin.Context, apiAccount APIAccount) {
@@ -795,6 +868,14 @@ func deleteGame(context *gin.Context, apiAccount APIAccount) {
 	}
 
 	db.Delete(game)
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  true,
+			"error": false,
+		},
+	)
 }
 
 func deleteMatch(context *gin.Context, apiAccount APIAccount) {
@@ -829,9 +910,19 @@ func deleteMatch(context *gin.Context, apiAccount APIAccount) {
 	}
 
 	db.Delete(match)
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  true,
+			"error": false,
+		},
+	)
 }
 
 func postCreateGame(context *gin.Context, apiAccount APIAccount) {
+	defer context.Request.Body.Close()
+
 	if apiAccount.GlobalPermissions < permGameCreation {
 		errorResponse(
 			context,
@@ -906,6 +997,21 @@ func postCreateGame(context *gin.Context, apiAccount APIAccount) {
 		return
 	}
 
+	newGameAccount := GameAccount{
+		AccountID:       apiAccount.AccountID,
+		GameID:          newGame.GameID,
+		GamePermissions: 5,
+	}
+
+	if err := db.Create(&newGameAccount).Error; err != nil {
+		errorResponse(
+			context,
+			"An error occured creating the account, try again.",
+			err.Error(),
+		)
+		return
+	}
+
 	context.JSON(
 		200,
 		gin.H{
@@ -916,11 +1022,168 @@ func postCreateGame(context *gin.Context, apiAccount APIAccount) {
 }
 
 func postCreateMatch(context *gin.Context, apiAccount APIAccount) {
+	defer context.Request.Body.Close()
 
+	var match RequestMatch
+
+	decoder := json.NewDecoder(context.Request.Body)
+
+	if err := decoder.Decode(&match); err != nil {
+		errorResponse(
+			context,
+			"Error recieving match information, please try again.",
+			err.Error(),
+		)
+		return
+	}
+
+	if len(match.Losers) == 0 {
+		errorResponse(
+			context,
+			"The list of losers cannot be blank.",
+			"Blank losers list.",
+		)
+		return
+	}
+
+	if len(match.Winners) == 0 {
+		errorResponse(
+			context,
+			"The list of winners cannot be blank.",
+			"Blank winners list.",
+		)
+		return
+	}
+
+	for _, loserID := range match.Losers {
+		for _, winnerID := range match.Winners {
+			if loserID == winnerID {
+				errorResponse(
+					context,
+					"A winner cannot also be a loser.",
+					"ID in both losers and winners list.",
+				)
+				return
+			}
+		}
+	}
+
+	tdb := db.Where(GameAccount{GameID: match.GameID})
+	allIDs := append(match.Losers, match.Winners...)
+	gameAccounts := make([]GameAccount, 0)
+
+	for _, accountID := range allIDs {
+		tdb.Or(GameAccount{AccountID: accountID, GameID: match.GameID})
+	}
+
+	if rdb := tdb.Find(&gameAccounts); rdb.Error != nil {
+		if rdb.RecordNotFound() {
+			errorResponse(
+				context,
+				"Could not find the users with accounts for that game, make sure everyone is in the rankings for that game and that game exists.",
+				"An account isn't in game rankings.",
+			)
+		} else {
+			errorResponse(
+				context,
+				"An error occured getting the information, try again.",
+				rdb.Error.Error(),
+			)
+		}
+		return
+	}
+
+	if len(allIDs) != len(gameAccounts) {
+		errorResponse(
+			context,
+			"Could not find all the users with accounts for that game, make sure everyone is in the rankings for that game.",
+			"Missing game accounts for match.",
+		)
+		return
+	}
+
+	newMatch := Match{
+		AccountID: apiAccount.AccountID,
+		GameID:    match.GameID,
+		MatchTime: match.MatchTime,
+	}
+
+	matchResponse, err := CreateMatch(db, &newMatch, &match.Losers, &match.Winners)
+
+	if err != nil {
+		errorResponse(
+			context,
+			"Error creating match, try again.",
+			err.Error(),
+		)
+		return
+	}
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  matchResponse,
+			"error": false,
+		},
+	)
 }
 
 func postUpdateUser(context *gin.Context, apiAccount APIAccount) {
+	//TODO
+}
 
+func putCreateGameAccount(context *gin.Context, apiAccount APIAccount) {
+	gid, err := strconv.ParseUint(context.Param("gid"), 10, 32)
+
+	if err != nil {
+		errorResponse(
+			context,
+			"Error parsing ID.",
+			err.Error(),
+		)
+		return
+	}
+
+	var userGameAccount GameAccount
+
+	if rdb := db.Where(GameAccount{AccountID: apiAccount.AccountID, GameID: gid}).First(&userGameAccount); !rdb.RecordNotFound() || (rdb.Error != nil && !rdb.RecordNotFound()) {
+		if !rdb.RecordNotFound() {
+			errorResponse(
+				context,
+				"Game account for the user with that ID already exists.",
+				"Game account already exist.",
+			)
+		} else {
+			errorResponse(
+				context,
+				"An error occured creating the account, try again.",
+				rdb.Error.Error(),
+			)
+		}
+		return
+	}
+
+	newGameAccount := GameAccount{
+		AccountID: apiAccount.AccountID,
+		GameID:    gid,
+	}
+
+	if err := db.Create(&newGameAccount).Error; err != nil {
+		errorResponse(
+			context,
+			"An error occured creating the account, try again.",
+			err.Error(),
+		)
+		return
+	}
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  true,
+			"error": false,
+		},
+	)
 }
 
 func putDisableGameAccount(context *gin.Context, apiAccount APIAccount) {
@@ -968,7 +1231,7 @@ func putDisableGameAccount(context *gin.Context, apiAccount APIAccount) {
 		} else {
 			errorResponse(
 				context,
-				"An error occured getting the information, try again.",
+				"An error occured deleting the account, try again.",
 				rdb.Error.Error(),
 			)
 		}
@@ -977,7 +1240,22 @@ func putDisableGameAccount(context *gin.Context, apiAccount APIAccount) {
 
 	userGameAccount.Enabled = false
 
-	db.Save(userGameAccount)
+	if err := db.Save(userGameAccount).Error; err != nil {
+		errorResponse(
+			context,
+			"An error occured disabling the account, try again.",
+			err.Error(),
+		)
+		return
+	}
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  true,
+			"error": false,
+		},
+	)
 }
 
 func putEnableGameAccount(context *gin.Context, apiAccount APIAccount) {
@@ -1025,7 +1303,7 @@ func putEnableGameAccount(context *gin.Context, apiAccount APIAccount) {
 		} else {
 			errorResponse(
 				context,
-				"An error occured getting the information, try again.",
+				"An error occured re-enabling the account, try again.",
 				rdb.Error.Error(),
 			)
 		}
@@ -1034,13 +1312,314 @@ func putEnableGameAccount(context *gin.Context, apiAccount APIAccount) {
 
 	userGameAccount.Enabled = true
 
-	db.Save(userGameAccount)
+	if err := db.Save(userGameAccount).Error; err != nil {
+		errorResponse(
+			context,
+			"An error occured re-enabling the account, try again.",
+			err.Error(),
+		)
+		return
+	}
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  true,
+			"error": false,
+		},
+	)
 }
 
 func putMatchConfirm(context *gin.Context, apiAccount APIAccount) {
-	// Implement score calculation on all confirms
+	// Implement score calculation on loser confirm >= 50% and (winner confirm == 100% or (len(winners) > 1 and winner confirm >= 2))
+	// True indicates update,
+	// False means match has already been confirmed
+	mid, err := strconv.ParseUint(context.Param("mid"), 10, 32)
+
+	if err != nil {
+		errorResponse(
+			context,
+			"Error parsing match ID.",
+			err.Error(),
+		)
+		return
+	}
+
+	var userTeamMember TeamMember
+
+	if rdb := db.Where(TeamMember{AccountID: apiAccount.AccountID, MatchID: mid}).First(&userTeamMember); rdb.Error != nil {
+		if rdb.RecordNotFound() {
+			errorResponse(
+				context,
+				"Could not find a game account for that user associated with that match.",
+				"Game account doesn't exist for match.",
+			)
+		} else {
+			errorResponse(
+				context,
+				"An error occured confirming the match, try again.",
+				rdb.Error.Error(),
+			)
+		}
+		return
+	}
+
+	var match Match
+
+	if rdb := db.
+		Preload("LosingTeam.TeamMembers.Accounts").Preload("LosingTeam.TeamMembers.GameAccounts").
+		Preload("WinningTeam.TeamMembers.Accounts").Preload("WinningTeam.TeamMembers.GameAccounts").
+		Preload("Game").Find(&match, mid); rdb.Error != nil {
+		if rdb.RecordNotFound() {
+			errorResponse(
+				context,
+				"Could not find a match with that ID to confirm.",
+				"Match with ID doesn't exist.",
+			)
+		} else {
+			errorResponse(
+				context,
+				"An error occured confirming the match, try again.",
+				rdb.Error.Error(),
+			)
+		}
+		return
+	}
+
+	if match.Confirmed {
+		errorResponse(
+			context,
+			"Match has already been confirmed.",
+			"Match already confirmed",
+		)
+		return
+	}
+
+	userTeamMember.Confirmed = true
+	userTeamMember.Deny = false
+
+	if err := db.Save(&userTeamMember).Error; err != nil {
+		errorResponse(
+			context,
+			"An error occured confirming the match, try again.",
+			err.Error(),
+		)
+		return
+	}
+
+	var loserConfirms, loserDenies, winnerConfirms, winnerDenies int
+	for _, loser := range match.LosingTeam.TeamMembers {
+		if loser.Confirmed {
+			if loser.Deny {
+				loserDenies++
+			} else {
+				loserConfirms++
+			}
+		}
+	}
+
+	for _, winner := range match.LosingTeam.TeamMembers {
+		if winner.Confirmed {
+			if winner.Deny {
+				winnerDenies++
+			} else {
+				winnerConfirms++
+			}
+		}
+	}
+
+	if userTeamMember.Winner {
+		winnerConfirms++
+	} else {
+		loserConfirms++
+	}
+
+	// Implement score calculation on loser confirm >= 50% and (winner confirm == 100% or (len(winners) > 1 and winner confirm >= 2))
+	if loserConfirms >= int(len(match.LosingTeam.TeamMembers)/2) && (winnerConfirms == len(match.WinningTeam.TeamMembers) || winnerConfirms >= 2) {
+		//Confirm Match and update scores here
+	}
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  true,
+			"error": false,
+		},
+	)
 }
 
 func putMatchDeny(context *gin.Context, apiAccount APIAccount) {
-	// Take down match if deny
+	// Take down match if loser deny >= 50% or winner deny > 0%
+	// True indicates update,
+	// False means match has already been confirmed
+	mid, err := strconv.ParseUint(context.Param("mid"), 10, 32)
+
+	if err != nil {
+		errorResponse(
+			context,
+			"Error parsing match ID.",
+			err.Error(),
+		)
+		return
+	}
+
+	var userTeamMember TeamMember
+
+	if rdb := db.Where(TeamMember{AccountID: apiAccount.AccountID, MatchID: mid}).First(&userTeamMember); rdb.Error != nil {
+		if rdb.RecordNotFound() {
+			errorResponse(
+				context,
+				"Could not find a game account for that user associated with that match.",
+				"Game account doesn't exist for match.",
+			)
+		} else {
+			errorResponse(
+				context,
+				"An error occured confirming the match, try again.",
+				rdb.Error.Error(),
+			)
+		}
+		return
+	}
+
+	var match Match
+
+	if rdb := db.
+		Preload("LosingTeam.TeamMembers.Accounts").Preload("LosingTeam.TeamMembers.GameAccounts").
+		Preload("WinningTeam.TeamMembers.Accounts").Preload("WinningTeam.TeamMembers.GameAccounts").
+		Preload("Game").Find(&match, mid); rdb.Error != nil {
+		if rdb.RecordNotFound() {
+			errorResponse(
+				context,
+				"Could not find a match with that ID to confirm.",
+				"Match with ID doesn't exist.",
+			)
+		} else {
+			errorResponse(
+				context,
+				"An error occured confirming the match, try again.",
+				rdb.Error.Error(),
+			)
+		}
+		return
+	}
+
+	if match.Confirmed {
+		errorResponse(
+			context,
+			"Match has already been confirmed.",
+			"Match already confirmed",
+		)
+		return
+	}
+
+	userTeamMember.Confirmed = true
+	userTeamMember.Deny = true
+
+	if err := db.Save(&userTeamMember).Error; err != nil {
+		errorResponse(
+			context,
+			"An error occured confirming the match, try again.",
+			err.Error(),
+		)
+		return
+	}
+
+	var loserConfirms, loserDenies, winnerConfirms, winnerDenies int
+	for _, loser := range match.LosingTeam.TeamMembers {
+		if loser.Confirmed {
+			if loser.Deny {
+				loserDenies++
+			} else {
+				loserConfirms++
+			}
+		}
+	}
+
+	for _, winner := range match.LosingTeam.TeamMembers {
+		if winner.Confirmed {
+			if winner.Deny {
+				winnerDenies++
+			} else {
+				winnerConfirms++
+			}
+		}
+	}
+
+	if userTeamMember.Winner {
+		winnerDenies++
+	} else {
+		loserDenies++
+	}
+
+	// Take down match if loser deny >= 50% or winner deny > 0%
+	if loserDenies >= int(len(match.LosingTeam.TeamMembers)/2) || winnerDenies > 0 {
+		if rdb := db.Where(Match{MatchID: mid}).Delete(Match{}); rdb.Error != nil {
+			if rdb.RecordNotFound() {
+				errorResponse(
+					context,
+					"Could not find a Match with that ID to delete.",
+					"Match with MID doesn't exist.",
+				)
+			} else {
+				errorResponse(
+					context,
+					"An error occured deleting that match, try again.",
+					rdb.Error.Error(),
+				)
+			}
+			return
+		}
+
+		if rdb := db.Where(Team{MatchID: mid}).Delete(Team{}); rdb.Error != nil {
+			if rdb.RecordNotFound() {
+				errorResponse(
+					context,
+					"Could not find a team with that ID to delete.",
+					"Team with MID doesn't exist.",
+				)
+			} else {
+				errorResponse(
+					context,
+					"An error occured deleting that team, try again.",
+					rdb.Error.Error(),
+				)
+			}
+			return
+		}
+
+		if rdb := db.Where(TeamMember{MatchID: mid}).Delete(TeamMember{}); rdb.Error != nil {
+			if rdb.RecordNotFound() {
+				errorResponse(
+					context,
+					"Could not any team members with that ID to delete.",
+					"TeamMembers with MID doesn't exist.",
+				)
+			} else {
+				errorResponse(
+					context,
+					"An error occured deleting the TeamMembers, try again.",
+					rdb.Error.Error(),
+				)
+			}
+			return
+		}
+
+		context.JSON(
+			200,
+			gin.H{
+				"data":  false,
+				"error": false,
+			},
+		)
+		return
+	}
+
+	context.JSON(
+		200,
+		gin.H{
+			"data":  true,
+			"error": false,
+		},
+	)
 }

@@ -47,8 +47,8 @@ func init() {
 
 	if updateTable {
 		// Note, write db backup functionality
-		db.DropTableIfExists(&Account{}, &Game{}, &GameAccount{}, &Match{}, &PendingAccount{}, &Team{}, &TeamMember{})
-		db.CreateTable(&Account{}, &Game{}, &GameAccount{}, &Match{}, &PendingAccount{}, &Team{}, &TeamMember{})
+		db.DropTableIfExists(&Account{}, &Game{}, &GameAccount{}, &Match{}, &PendingAccount{}, &Session{}, &Team{}, &TeamMember{})
+		db.CreateTable(&Account{}, &Game{}, &GameAccount{}, &Match{}, &PendingAccount{}, &Session{}, &Team{}, &TeamMember{})
 	}
 }
 
@@ -62,34 +62,35 @@ func main() {
 		/*************\
 		    No Auth
 		\*************/
-		api.GET("/game/rankings/:gid", getRankingsForGame)
-		api.POST("/login", postLogin)
-		api.GET("/match/:mid", getMatch)
-		api.GET("/matches/game/:gid", getGameMatches)
-		api.GET("/matches/user/:aid", getUserMatches)
-		api.GET("/matches/user/:pid/game/:gid", getGameMatchesForUser)
-		// api.GET("/matches/team/:tid", func(context *gin.Context) { })
-		api.GET("/team/:tid", getTeam)
-		api.GET("/user/account/:aid", getUserAccount)
-		api.GET("/user/account/:aid/game/:gid", getUserAccountForGame)
-		api.GET("/user/confirm/:uuid", getConfirmAccount)
-		api.POST("/user/create", postCreateAccount)
-		api.GET("/user/rankings/:aid", getRankingsForUserAccount)
-		api.GET("/user/ranking/:aid/game/:gid", getRankingsForUserAccountInGame)
+		api.GET("/game/rankings/:gid", getRankingsForGame)                       // Check
+		api.POST("/login", postLogin)                                            // Check
+		api.GET("/match/:mid", getMatch)                                         // Not Check
+		api.GET("/matches/game/:gid", getGameMatches)                            // Not Check
+		api.GET("/matches/user/:aid", getUserMatches)                            // Not Check
+		api.GET("/matches/user/:aid/game/:gid", getGameMatchesForUser)           // Not Check
+		api.GET("/team/:tid", getTeam)                                           // Not Check
+		api.GET("/user/account/:aid", getUserAccount)                            // Check
+		api.GET("/user/account/:aid/game/:gid", getUserAccountForGame)           // Check
+		api.GET("/user/confirm/:uuid", getConfirmAccount)                        // Check
+		api.POST("/user/create", postCreateAccount)                              // Check
+		api.GET("/user/rankings/:aid", getRankingsForUserAccount)                // Check
+		api.GET("/user/ranking/:aid/game/:gid", getRankingsForUserAccountInGame) // Check
+		// api.GET("/matches/team/:tid", func(context *gin.Context) { }) // Not Check
 
 		/**********\
 		    Auth
 		\**********/
-		api.DELETE("/user/delete/:aid", assureAuthentication(deleteUser))
-		api.DELETE("/game/delete/:gid", assureAuthentication(deleteGame))
-		api.DELETE("/match/delete/:mid", assureAuthentication(deleteMatch))
-		api.POST("/game/create", assureAuthentication(postCreateGame))
-		api.POST("/match/create", assureAuthentication(postCreateMatch))
-		api.POST("/user/update", assureAuthentication(postUpdateUser))
-		api.PUT("/user/disable/:aid/game/:gid", assureAuthentication(putDisableGameAccount))
-		api.PUT("/user/enable/:aid/game/:gid", assureAuthentication(putEnableGameAccount))
-		api.PUT("/match/confirm/:mid", assureAuthentication(putMatchConfirm))
-		api.PUT("/match/deny/:mid", assureAuthentication(putMatchDeny))
+		api.DELETE("/user/delete", assureAuthentication(deleteUser))                         // Check
+		api.DELETE("/game/delete/:gid", assureAuthentication(deleteGame))                    // Not Check
+		api.DELETE("/match/delete/:mid", assureAuthentication(deleteMatch))                  // Not Check
+		api.POST("/game/create", assureAuthentication(postCreateGame))                       // Check
+		api.POST("/match/create", assureAuthentication(postCreateMatch))                     // Not Check
+		api.POST("/user/update", assureAuthentication(postUpdateUser))                       // Not Check FINISH
+		api.PUT("/game/account/create/:gid", assureAuthentication(putCreateGameAccount))     // Check
+		api.PUT("/user/disable/:aid/game/:gid", assureAuthentication(putDisableGameAccount)) // Not Check FINISH
+		api.PUT("/user/enable/:aid/game/:gid", assureAuthentication(putEnableGameAccount))   // Not Check FINISH
+		api.PUT("/match/confirm/:mid", assureAuthentication(putMatchConfirm))                // Not Check
+		api.PUT("/match/deny/:mid", assureAuthentication(putMatchDeny))                      // Not Check
 	}
 
 	router.Run(":3800")

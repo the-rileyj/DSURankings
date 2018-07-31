@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"io/ioutil"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -9,11 +11,26 @@ import (
 
 func assureAuthentication(handler func(context *gin.Context, apiUser APIAccount)) func(context *gin.Context) {
 	return func(context *gin.Context) {
+		var bodyBytes []byte
+
+		if context.Request.Body == nil {
+			errorResponse(
+				context,
+				"Invalid token.",
+				"Empty request body.",
+			)
+			return
+		}
+
+		bodyBytes, _ = ioutil.ReadAll(context.Request.Body)
+
+		context.Request.Body.Close()
+
+		context.Request.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+
 		var apiAuth ApiAuther
 
-		decoder := json.NewDecoder(context.Request.Body)
-
-		if err := decoder.Decode(&apiAuth); err != nil {
+		if err := json.Unmarshal(bodyBytes, &apiAuth); err != nil {
 			errorResponse(
 				context,
 				"Invalid token.",
